@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Control Car App</title>
+    <style>
+        /* Basic Reset */
+        body, h1, h2, p, button {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f8f9fa;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header {
+            background-color: #ffc107;
+            color: #212529;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+        }
+
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 40px;
+            background-color: #ffc107;
+            color: #212529;
+            cursor: pointer;
+            margin: 10px;
+            transition: background-color 0.3s, transform 0.3s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        button:hover {
+            background-color: #e0a800;
+            transform: translateY(-5px);
+        }
+
+        button:active {
+            transform: translateY(0);
+            background-color: #d39e00;
+        }
+
+        #response {
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 30px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 900px;
+        }
+
+        h2 {
+            font-size: 1.75rem;
+            margin-bottom: 1rem;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 0;
+            padding: 1rem;
+            background-color: #f1f1f1;
+            border-radius: 35px;
+            overflow: auto;
+            max-height: 200px;
+        }
+
+        footer {
+            background-color: #212529;
+            color: #ffffff;
+            padding: 1rem;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: #ffc107;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        footer a:hover {
+            color: #e0a800;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Voice Control Car App</h1>
+    </header>
+    <main>
+        <section id="controls">
+            <button id="connect-bluetooth">Connect Bluetooth</button>
+            <button id="start">Move Forward</button>
+            <button id="stop">Stop Car</button>
+            <button id="right">Move Right</button>
+            <button id="left">Move Left</button>
+            <button id="back">Move Backward</button>
+            <button id="start-voice">Start Voice Recognition</button>
+        </section>
+        <section id="response">
+            <h2>Status</h2>
+            <pre id="api-response">Waiting for response...</pre>
+        </section>
+    </main>
+    <footer>
+        <p>© 2024 Voice Control Car App. <a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a></p>
+    </footer>
+    <script>
+        let bluetoothDevice;
+        let gattServer;
+        let bluetoothCharacteristic;
+        let batteryCharacteristic;
+        let distanceCharacteristic;
+
+        // UUIDs for the Bluetooth services and characteristics
+        const SERIAL_PORT_SERVICE_UUID = '00001101-0000-1000-8000-00805f9b34fb';
+        const BATTERY_SERVICE_UUID = '0000180f-0000-1000-8000-00805f9b34fb';
+        const BATTERY_LEVEL_CHARACTERISTIC_UUID = '00002a19-0000-1000-8000-00805f9b34fb';
+        const DISTANCE_CHARACTERISTIC_UUID = 'YOUR_DISTANCE_CHARACTERISTIC_UUID'; // Replace with your distance UUID
+
+        async function connectBluetooth() {
+            try {
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [SERIAL_PORT_SERVICE_UUID, BATTERY_SERVICE_UUID]
+                });
+
+                gattServer = await bluetoothDevice.gatt.connect();
+                const serialPortService = await gattServer.getPrimaryService(SERIAL_PORT_SERVICE_UUID);
+                bluetoothCharacteristic = await serialPortService.getCharacteristic(SERIAL_PORT_SERVICE_UUID);
+
+                const batteryService = await gattServer.getPrimaryService(BATTERY_SERVICE_UUID);
+                batteryCharacteristic = await batteryService.getCharacteristic(BATTERY_LEVEL_CHARACTERISTIC_UUID);
+
+                distanceCharacteristic = await serialPortService.getCharacteristic(DISTANCE_CHARACTERISTIC_UUID); // Adjust service UUID if needed
+
+                updateBatteryLevel();
+                updateDistance();
+
+                document.getElementById('api-response').textContent = `Connected to Bluetooth device: ${bluetoothDevice.name}`;
+            } catch (error) {
+                document.getElementById('api-response').textContent = `Error connecting to Bluetooth device: ${error}`;
+                console.error('Error connecting to Bluetooth device:', error);
+            }
+        }
+
+        async function sendCommand(command) {
+            if (bluetoothCharacteristic) {
+                try {
+                    await bluetoothCharacteristic.writeValue(new TextEncoder().encode(command));
+                    document.getElementById('api-response').textContent = `Command sent: ${command}`;
+                } catch (error) {
+                    document.getElementById('api-response').textContent = `Error sending command: ${error}`;
+                    console.error('Error sending command:', error);
+                }
+            } else {
+                document.getElementById('api-response').textContent = 'Bluetooth device not connected.';
+            }
+        }
+
+        async function updateBatteryLevel() {
+            if (batteryCharacteristic) {
+                try {
+                    const batteryLevel = await batteryCharacteristic.readValue();
+                    document.getElementById('api-response').textContent += `\nBattery Level: ${batteryLevel.getUint8(0)}%`;
+                } catch (error) {
+                    document.getElementById('api-response').textContent += `\nError reading battery level: ${error}`;
+                    console.error('Error reading battery level:', error);
+                }
+            }
+        }
+
+        async function updateDistance() {
+            if (distanceCharacteristic) {
+                try {
+                    const distance = await distanceCharacteristic.readValue();
+                    document.getElementById('api-response').textContent += `\nDistance: ${distance.getUint8(0)} cm`;
+                } catch (error) {
+                    document.getElementById('api-response').textContent += `\nError reading distance: ${error}`;
+                    console.error('Error reading distance:', error);
+                }
+            }
+        }
+
+        document.getElementById('start').addEventListener('click', () => {
+            sendCommand('F'); // Forward
+        });
+
+        document.getElementById('stop').addEventListener('click', () => {
+            sendCommand('S'); // Stop
+        });
+
+        document.getElementById('right').addEventListener('click', () => {
+            sendCommand('R'); // Right
+        });
+
+        document.getElementById('left').addEventListener('click', () => {
+            sendCommand('L'); // Left
+        });
+
+        document.getElementById('back').addEventListener('click', () => {
+            sendCommand('B'); // Backward
+        });
+
+        document.getElementById('connect-bluetooth').addEventListener('click', connectBluetooth);
+
+        function startVoiceRecognition() {
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onresult = (event) => {
+                const command = event.results[0][0].transcript.toLowerCase();
+                handleVoiceCommand(command);
+            };
+
+            recognition.onerror = (event) => {
+                document.getElementById('api-response').textContent = `Speech recognition error: ${event.error}`;
+                consoleconsole.error('Speech recognition error:', event.error);
+            };
+
+            recognition.start();
+        }
+
+        function handleVoiceCommand(command) {
+            console.log('Voice command:', command);
+            if (command.includes('start') || command.includes('forward')) {
+                sendCommand('F');
+            } else if (command.includes('stop')) {
+                sendCommand('S');
+            } else if (command.includes('right')) {
+                sendCommand('R');
+            } else if (command.includes('left')) {
+                sendCommand('L');
+            } else if (command.includes('back') || command.includes('backward')) {
+                sendCommand('B');
+            } else {
+                document.getElementById('api-response').textContent = `Unknown command: ${command}`;
+            }
+        }
+
+        document.getElementById('start-voice').addEventListener('click', startVoiceRecognition);
+    </script>
+</body>
+</html>
